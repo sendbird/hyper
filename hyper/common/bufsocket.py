@@ -13,6 +13,21 @@ process.
 import select
 from .exceptions import ConnectionResetError, LineTooLongError
 
+def _wait_for_read(sock, timeout=None):
+    poll = None
+    try:
+        poll = select.poll()
+        poll.register(sock, select.POLLIN)
+        if timeout:
+            timeout *= 1000
+        events = poll.poll(timeout)
+        return bool(events)
+    except AttributeError:
+        rlist, wlist, _ = select.select([sock], [], [], timeout)
+        return bool(rlist or wlist)
+    finally:
+        if poll:
+            poll.unregister(sock)
 
 class BufferedSocket(object):
     """
@@ -68,7 +83,7 @@ class BufferedSocket(object):
         """
         Whether or not there is more data to read from the socket.
         """
-        read = select.select([self._sck], [], [], 0)[0]
+        read = _wait_for_read(self._sck, 0)
         if read:
             return True
 
@@ -134,7 +149,7 @@ class BufferedSocket(object):
         # attempt will block. If it will, don't bother reading. If we need the
         # data, always do the read.
         if self._bytes_in_buffer >= amt:
-            should_read = select.select([self._sck], [], [], 0)[0]
+            should_read = _wait_for_read(self._sck, 0)
         else:
             should_read = True
 
